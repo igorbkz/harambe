@@ -198,7 +198,7 @@
     }
 
     function buildPrompt() {
-        const maxHistoryLength = 50;
+        const maxHistoryLength = 10; // Reduzir o histórico para evitar repetições
         const promptHistory = conversationHistory.slice(-maxHistoryLength);
         let prompt = `<s>[INST] Você é um bom assistente que responde em português. [/INST]\n`;
 
@@ -227,7 +227,7 @@
                 max_new_tokens: 500,
                 temperature: 0.7,
                 top_p: 0.9,
-                repetition_penalty: 1.1,
+                repetition_penalty: 1.2, // Aumentar a penalidade de repetição
                 return_full_text: false
             }
         };
@@ -268,7 +268,6 @@
 
         conversationHistory.push({ role: 'user', content: userMessage });
         saveConversationHistory();
-
         addMessage(userMessage, true);
         userInput.value = '';
 
