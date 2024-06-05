@@ -57,14 +57,6 @@
             color: #f4f4f4;
         }
 
-        .bot-message pre {
-            background-color: #555;
-            padding: 8px;
-            border-radius: 8px;
-            overflow-x: auto;
-            max-width: 100%;
-        }
-
         .typing-indicator {
             display: flex;
             align-items: center;
@@ -152,7 +144,6 @@
     const clearChatButton = document.getElementById('clear-chat');
 
     let conversationHistory = [];
-    let isProcessing = false;
 
     async function queryAPI(data) {
         try {
@@ -198,7 +189,7 @@
     }
 
     function buildPrompt() {
-        const maxHistoryLength = 10; // Reduzir o histórico para evitar repetições
+        const maxHistoryLength = 15;
         const promptHistory = conversationHistory.slice(-maxHistoryLength);
         let prompt = `<s>[INST] Você é um bom assistente que responde em português. [/INST]\n`;
 
@@ -218,16 +209,13 @@
     }
 
     async function processBotResponse(typingIndicator) {
-        if (isProcessing) return;
-        isProcessing = true;
-
         const requestData = {
             inputs: buildPrompt(),
             parameters: {
-                max_new_tokens: 500,
+                max_new_tokens: 1024,
                 temperature: 0.7,
                 top_p: 0.9,
-                repetition_penalty: 1.2, // Aumentar a penalidade de repetição
+                repetition_penalty: 1.1,
                 return_full_text: false
             }
         };
@@ -242,11 +230,7 @@
                 botMessage = cleanResponse(botResponse[0].generated_text);
             }
 
-            if (botMessage.includes('<code>') || botMessage.includes('</code>')) {
-                botMessage = `<pre><code>${botMessage.replace(/<\/?code>/g, '')}</code></pre>`;
-            } else {
-                botMessage = marked.parse(botMessage);
-            }
+            botMessage = marked.parse(botMessage);
 
             conversationHistory.push({ role: 'assistant', content: botMessage });
             saveConversationHistory();
@@ -258,7 +242,6 @@
         } finally {
             sendButton.disabled = false;
             userInput.focus();
-            isProcessing = false;
         }
     }
 
@@ -268,6 +251,7 @@
 
         conversationHistory.push({ role: 'user', content: userMessage });
         saveConversationHistory();
+
         addMessage(userMessage, true);
         userInput.value = '';
 
@@ -285,50 +269,46 @@
         };
     }
 
-    const debouncedHandleUserInput = debounce(handleUserInput, 300);
-
     function saveConversationHistory() {
-        try {
-            localStorage.setItem('conversationHistory', JSON.stringify(conversationHistory));
-        } catch (error) {
-            console.error('Erro ao salvar histórico de conversa:', error);
+        localStorage.setItem('conversationHistory', JSON.stringify(conversationHistory));
+    }
+
+    function loadConversationHistory() {
+        const savedHistory = localStorage.getItem('conversationHistory');
+        if (savedHistory) {
+            conversationHistory = JSON.parse(savedHistory);
+            conversationHistory.forEach(msg => {
+                addMessage(msg.content, msg.role === 'user');
+            });
         }
     }
 
-    sendButton.addEventListener('click', debouncedHandleUserInput);
+    function clearConversationHistory() {
+        localStorage.removeItem('conversationHistory');
+        conversationHistory = [];
+        messagesContainer.innerHTML = '';
+    }
 
     userInput.addEventListener('input', () => {
         sendButton.disabled = userInput.value.trim() === '';
     });
 
-    userInput.addEventListener('keypress', (event) => {
+    userInput.addEventListener('keydown', (event) => {
         if (event.key === 'Enter' && !sendButton.disabled) {
-            debouncedHandleUserInput();
+            handleUserInput();
         }
     });
 
+    sendButton.addEventListener('click', handleUserInput);
     clearChatButton.addEventListener('click', () => {
-        if (confirm('Tem certeza de que deseja reiniciar o chat? Isso apagará todo o histórico.')) {
-            conversationHistory = [];
-            localStorage.removeItem('conversationHistory');
-            messagesContainer.innerHTML = '';
-        }
+        clearConversationHistory();
+        userInput.focus();
     });
 
-    function loadConversationHistory() {
-        try {
-            const storedHistory = localStorage.getItem('conversationHistory');
-            if (storedHistory) {
-                conversationHistory = JSON.parse(storedHistory);
-                conversationHistory.forEach(msg => addMessage(msg.content, msg.role === 'user'));
-            }
-        } catch (error) {
-            console.error('Erro ao carregar histórico de conversa:', error);
-        }
-    }
-
-    loadConversationHistory();
-    userInput.focus();
+    document.addEventListener('DOMContentLoaded', () => {
+        loadConversationHistory();
+        userInput.focus();
+    });
 </script>
 </body>
 </html>
