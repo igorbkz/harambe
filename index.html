@@ -57,6 +57,14 @@
             color: #f4f4f4;
         }
 
+        .bot-message pre {
+            background-color: #555;
+            padding: 8px;
+            border-radius: 8px;
+            overflow-x: auto;
+            max-width: 100%;
+        }
+
         .typing-indicator {
             display: flex;
             align-items: center;
@@ -144,6 +152,7 @@
     const clearChatButton = document.getElementById('clear-chat');
 
     let conversationHistory = [];
+    let isProcessing = false;
 
     async function queryAPI(data) {
         try {
@@ -163,14 +172,10 @@
         }
     }
 
-    function addMessage(messageContent, isUser) {
+    function addMessage(content, isUser) {
         const messageElement = document.createElement('div');
         messageElement.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
-        if (isUser) {
-            messageElement.textContent = messageContent;
-        } else {
-            messageElement.innerHTML = messageContent;
-        }
+        messageElement.innerHTML = isUser ? content : marked.parse(content);
         messagesContainer.appendChild(messageElement);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }
@@ -189,17 +194,16 @@
     }
 
     function buildPrompt() {
-        const maxHistoryLength = 15;
+        const maxHistoryLength = 5; // Reduzir tamanho do histórico para melhorar a velocidade.
         const promptHistory = conversationHistory.slice(-maxHistoryLength);
         let prompt = `<s>[INST] Você é um bom assistente que responde em português. [/INST]\n`;
 
         promptHistory.forEach(msg => {
-            if (msg.role === 'user') {
-                prompt += `[INST] ${msg.content} [/INST] `;
-            } else {
-                prompt += `${msg.content} </s> <s>`;
-            }
+            prompt += msg.role === 'user' 
+                ? `[INST] ${msg.content} [/INST]` 
+                : `${msg.content} </s> <s>`;
         });
+
         prompt += `[INST] ${userInput.value.trim()} [/INST]`;
         return prompt;
     }
@@ -209,13 +213,16 @@
     }
 
     async function processBotResponse(typingIndicator) {
+        if (isProcessing) return;
+        isProcessing = true;
+
         const requestData = {
             inputs: buildPrompt(),
             parameters: {
-                max_new_tokens: 1024,
+                max_new_tokens: 300,
                 temperature: 0.7,
                 top_p: 0.9,
-                repetition_penalty: 1.1,
+                repetition_penalty: 1.2,
                 return_full_text: false
             }
         };
@@ -230,7 +237,9 @@
                 botMessage = cleanResponse(botResponse[0].generated_text);
             }
 
-            botMessage = marked.parse(botMessage);
+            botMessage = botMessage.includes('<code>') || botMessage.includes('</code>')
+                ? `<pre><code>${botMessage.replace(/<\/?code>/g, '')}</code></pre>`
+                : marked.parse(botMessage);
 
             conversationHistory.push({ role: 'assistant', content: botMessage });
             saveConversationHistory();
@@ -242,6 +251,7 @@
         } finally {
             sendButton.disabled = false;
             userInput.focus();
+            isProcessing = false;
         }
     }
 
@@ -251,7 +261,6 @@
 
         conversationHistory.push({ role: 'user', content: userMessage });
         saveConversationHistory();
-
         addMessage(userMessage, true);
         userInput.value = '';
 
@@ -269,46 +278,52 @@
         };
     }
 
-    function saveConversationHistory() {
-        localStorage.setItem('conversationHistory', JSON.stringify(conversationHistory));
-    }
+    const debouncedHandleUserInput = debounce(handleUserInput, 300);
 
-    function loadConversationHistory() {
-        const savedHistory = localStorage.getItem('conversationHistory');
-        if (savedHistory) {
-            conversationHistory = JSON.parse(savedHistory);
-            conversationHistory.forEach(msg => {
-                addMessage(msg.content, msg.role === 'user');
-            });
+    function saveConversationHistory() {
+        try {
+            localStorage.setItem('conversationHistory', JSON.stringify(conversationHistory));
+        } catch (error) {
+            console.error('Erro ao salvar histórico de conversa:', error);
         }
     }
 
-    function clearConversationHistory() {
-        localStorage.removeItem('conversationHistory');
-        conversationHistory = [];
-        messagesContainer.innerHTML = '';
+    function loadConversationHistory() {
+        try {
+            const storedHistory = localStorage.getItem('conversationHistory');
+            if (storedHistory) {
+                conversationHistory = JSON.parse(storedHistory);
+                conversationHistory.forEach(msg => addMessage(msg.content, msg.role === 'user'));
+            }
+        } catch (error) {
+            console.error('Erro ao carregar histórico de conversa:', error);
+        }
     }
+
+    function resetChat() {
+        if (confirm('Tem certeza de que deseja reiniciar o chat? Isso apagará todo o histórico.')) {
+            conversationHistory = [];
+            localStorage.removeItem('conversationHistory');
+            messagesContainer.innerHTML = '';
+        }
+    }
+
+    sendButton.addEventListener('click', debouncedHandleUserInput);
 
     userInput.addEventListener('input', () => {
         sendButton.disabled = userInput.value.trim() === '';
     });
 
-    userInput.addEventListener('keydown', (event) => {
+    userInput.addEventListener('keypress', (event) => {
         if (event.key === 'Enter' && !sendButton.disabled) {
-            handleUserInput();
+            debouncedHandleUserInput();
         }
     });
 
-    sendButton.addEventListener('click', handleUserInput);
-    clearChatButton.addEventListener('click', () => {
-        clearConversationHistory();
-        userInput.focus();
-    });
+    clearChatButton.addEventListener('click', resetChat);
 
-    document.addEventListener('DOMContentLoaded', () => {
-        loadConversationHistory();
-        userInput.focus();
-    });
+    loadConversationHistory();
+    userInput.focus();
 </script>
 </body>
 </html>
